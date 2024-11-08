@@ -1,0 +1,6 @@
+
+title: "RaspiBikeTracker"
+description: "라즈베리파이와 자전거 추적 시스템을 위한 문서"
+baseurl: "/docs"
+url: "https://yourusername.github.io"
+theme: jekyll-theme-cayman
