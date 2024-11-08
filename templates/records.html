@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>운동 기록</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <h1>운동 기록</h1>
+    <table border="1">
+        <tr>
+            <th>Timestamp</th>
+            <th>Light</th>
+            <th>Distance</th>
+            <th>Humidity</th>
+            <th>Temperature</th>
+        </tr>
+        {% for record in data %}
+        <tr>
+            <td>{{ record.Timestamp }}</td>
+            <td>{{ record.Light }}</td>
+            <td>{{ record.Distance }}</td>
+            <td>{{ record.Humidity }}</td>
+            <td>{{ record.Temperature }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+</body>
+</html>

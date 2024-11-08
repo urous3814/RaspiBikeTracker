@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>운동 기록 시작/정지</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+</head>
+<body>
+    <h1>운동 기록 시작/정지</h1>
+    <button id="startButton">운동 기록 시작</button>
+    <button id="stopButton">운동 기록 정지</button>
+    <div>
+        <h2>실시간 데이터</h2>
+        <p id="gpsData">GPS 정보: </p>
+        <p id="speedData">속도 정보: </p>
+    </div>
+    <script>
+        document.getElementById('startButton').addEventListener('click', function() {
+            axios.post('/start')
+                .then(response => alert(response.data));
+        });
+
+        document.getElementById('stopButton').addEventListener('click', function() {
+            axios.post('/stop')
+                .then(response => alert(response.data));
+        });
+
+        if (navigator.geolocation) {
+            navigator.geolocation.watchPosition(function(position) {
+                const gpsData = `위도: ${position.coords.latitude}, 경도: ${position.coords.longitude}`;
+                document.getElementById('gpsData').innerText = `GPS 정보: ${gpsData}`;
+                
+                const speedData = `속도: ${position.coords.speed}`;
+                document.getElementById('speedData').innerText = `속도 정보: ${speedData}`;
+                
+                axios.post('/phone_data', {
+                    latitude: position.coords.latitude,
+                    longitude: position.coords.longitude,
+                    speed: position.coords.speed
+                });
+            });
+        } else {
+            alert("Geolocation is not supported by this browser.");
+        }
+    </script>
+</body>
+</html>
