@@ -1,6 +1,6 @@
 main:
   - title: "Home"
-    url: "/docs/"
+    url: "/docs/index"
   - title: "Setup"
     url: "/docs/setup"
   - title: "Files"
