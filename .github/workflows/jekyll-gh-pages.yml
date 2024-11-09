@@ -35,6 +35,7 @@ jobs:
       - name: Install dependencies
         run: |
           gem install bundler
+          gem install jekyll-theme-cayman
           bundle install
       - name: Build with Jekyll
         run: bundle exec jekyll build --source ./docs --destination ./docs/_site
