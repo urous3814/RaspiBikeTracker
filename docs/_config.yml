@@ -2,4 +2,4 @@
 title: "RaspiBikeTracker"
 description: "라즈베리파이와 자전거 추적 시스템을 위한 문서"
 baseurl: ""
-theme: jekyll-theme-cayman
+remote_theme: jekyll-theme-cayman

@@ -7,6 +7,9 @@ import csv
 import os
 import json
 from functions import analyze_image, check_off_road, calculate_rain_probability
+import busio
+from adafruit_htu21d import HTU21D
+import Adafruit_MCP3008
 
 # GPIO 핀 설정
 LIGHT_SENSOR_PIN = 17
@@ -17,6 +20,12 @@ LED_PIN = 18
 BUTTON_PIN = 27
 FRONT_LED_PIN = 22  # 전면 LED 핀
 REAR_LED_PIN = 5    # 후면 LED 핀
+SPI_SCLK_PIN = 11
+SPI_MISO_PIN = 9
+SPI_MOSI_PIN = 10
+SPI_CE0_PIN = 8
+I2C_SDA_PIN = 2
+I2C_SCL_PIN = 3
 
 # MQTT 설정
 MQTT_BROKER = "mqtt.example.com"
@@ -38,6 +47,13 @@ GPIO.setup(FRONT_LED_PIN, GPIO.OUT)
 GPIO.setup(REAR_LED_PIN, GPIO.OUT)
 camera = PiCamera()
 
+# I2C 설정
+i2c = busio.I2C(I2C_SCL_PIN, I2C_SDA_PIN)
+htu21d_sensor = HTU21D(i2c)
+
+# SPI 설정
+mcp = Adafruit_MCP3008.MCP3008(clk=SPI_SCLK_PIN, cs=SPI_CE0_PIN, miso=SPI_MISO_PIN, mosi=SPI_MOSI_PIN)
+
 # 데이터 저장 디렉토리 설정
 DATA_DIR = "./data"
 if not os.path.exists(DATA_DIR):
@@ -50,7 +66,7 @@ with open(csv_file_path, mode='w') as file:
     writer.writerow(["Timestamp", "Light", "Distance", "Humidity", "Temperature"])
 
 def read_light_sensor():
-    return GPIO.input(LIGHT_SENSOR_PIN)
+    return mcp.read_adc(0)
 
 def read_ultrasonic_sensor():
     GPIO.output(ULTRASONIC_TRIG_PIN, True)
@@ -67,7 +83,8 @@ def read_ultrasonic_sensor():
     return distance
 
 def read_dht_sensor():
-    humidity, temperature = Adafruit_DHT.read_retry(Adafruit_DHT.DHT11, DHT_SENSOR_PIN)
+    humidity = htu21d_sensor.relative_humidity
+    temperature = htu21d_sensor.temperature
     return humidity, temperature
 
 def on_button_press(channel):
