@@ -6,44 +6,149 @@
     <title>운동 기록 시작/정지</title>
     <link rel="stylesheet" href="/static/style.css">
     <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/paho-mqtt/mqttws31.min.js"></script>
+    <script src="https://maps.googleapis.com/maps/api/js?key=YOUR_API_KEY"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
     <h1>운동 기록 시작/정지</h1>
-    <button id="startButton">운동 기록 시작</button>
-    <button id="stopButton">운동 기록 정지</button>
+    <div id="map" style="height: 400px; width: 100%;"></div>
     <div>
         <h2>실시간 데이터</h2>
         <p id="gpsData">GPS 정보: </p>
         <p id="speedData">속도 정보: </p>
     </div>
+    <div>
+        <h2>속도 그래프</h2>
+        <canvas id="speedChart"></canvas>
+    </div>
+    <div>
+        <h2>고도 정보</h2>
+        <p id="altitudeData">고도 정보: </p>
+    </div>
+    <button id="startButton">운동 기록 시작</button>
+    <button id="stopButton">운동 기록 정지</button>
     <script>
+        let map, marker, speedChart;
+        function initMap() {
+            map = new google.maps.Map(document.getElementById('map'), {
+                center: {lat: -34.397, lng: 150.644},
+                zoom: 15
+            });
+            marker = new google.maps.Marker({
+                map: map,
+                title: 'Current Location'
+            });
+        }
+
+        function initSpeedChart() {
+            const ctx = document.getElementById('speedChart').getContext('2d');
+            speedChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: '속도',
+                        data: [],
+                        borderColor: 'rgba(75, 192, 192, 1)',
+                        borderWidth: 1,
+                        fill: false
+                    }]
+                },
+                options: {
+                    scales: {
+                        x: {
+                            type: 'time',
+                            time: {
+                                unit: 'second'
+                            }
+                        },
+                        y: {
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+        }
+
+        function updateSpeedChart(speed) {
+            const now = new Date();
+            speedChart.data.labels.push(now);
+            speedChart.data.datasets[0].data.push(speed);
+            speedChart.update();
+        }
+
+        function updateMap(latitude, longitude, speed, altitude) {
+            const position = {lat: latitude, lng: longitude};
+            map.setCenter(position);
+            marker.setPosition(position);
+            document.getElementById('gpsData').innerText = `GPS 정보: 위도: ${latitude}, 경도: ${longitude}`;
+            document.getElementById('speedData').innerText = `속도 정보: 속도: ${speed}`;
+            document.getElementById('altitudeData').innerText = `고도 정보: 고도: ${altitude}`;
+            updateSpeedChart(speed);
+        }
+
+        const client = new Paho.MQTT.Client("mqtt.example.com", Number(8080), "clientId");
+        client.onConnectionLost = function(responseObject) {
+            if (responseObject.errorCode !== 0) {
+                console.log("onConnectionLost:" + responseObject.errorMessage);
+            }
+        };
+
+        client.onMessageArrived = function(message) {
+            const data = JSON.parse(message.payloadString);
+            updateMap(data.latitude, data.longitude, data.speed, data.altitude);
+        };
+
+        client.connect({onSuccess: onConnect});
+
+        function onConnect() {
+            console.log("onConnect");
+            client.subscribe("phone/tracker");
+        }
+
         document.getElementById('startButton').addEventListener('click', function() {
-            axios.post('/start')
-                .then(response => alert(response.data));
+            const message = new Paho.MQTT.Message("start");
+            message.destinationName = "bike/tracker";
+            client.send(message);
         });
 
         document.getElementById('stopButton').addEventListener('click', function() {
-            axios.post('/stop')
-                .then(response => alert(response.data));
+            const message = new Paho.MQTT.Message("stop");
+            message.destinationName = "bike/tracker";
+            client.send(message);
         });
 
         if (navigator.geolocation) {
             navigator.geolocation.watchPosition(function(position) {
-                const gpsData = `위도: ${position.coords.latitude}, 경도: ${position.coords.longitude}`;
-                document.getElementById('gpsData').innerText = `GPS 정보: ${gpsData}`;
-                
-                const speedData = `속도: ${position.coords.speed}`;
-                document.getElementById('speedData').innerText = `속도 정보: ${speedData}`;
-                
-                axios.post('/phone_data', {
+                const data = {
                     latitude: position.coords.latitude,
                     longitude: position.coords.longitude,
-                    speed: position.coords.speed
-                });
+                    speed: position.coords.speed,
+                    altitude: position.coords.altitude
+                };
+                const message = new Paho.MQTT.Message(JSON.stringify(data));
+                message.destinationName = "phone/tracker";
+                client.send(message);
+                updateMap(data.latitude, data.longitude, data.speed, data.altitude);
             });
         } else {
             alert("Geolocation is not supported by this browser.");
         }
+
+        window.onload = function() {
+            initMap();
+            initSpeedChart();
+            // Add test data
+            const testData = [
+                {latitude: -34.397, longitude: 150.644, speed: 10, altitude: 50},
+                {latitude: -34.398, longitude: 150.645, speed: 12, altitude: 52},
+                {latitude: -34.399, longitude: 150.646, speed: 14, altitude: 54}
+            ];
+            testData.forEach(data => {
+                updateMap(data.latitude, data.longitude, data.speed, data.altitude);
+            });
+        };
     </script>
 </body>
 </html>

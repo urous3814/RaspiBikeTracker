@@ -10,6 +10,7 @@ from functions import analyze_image, check_off_road, calculate_rain_probability
 import busio
 from adafruit_htu21d import HTU21D
 import Adafruit_MCP3008
+import pymysql
 
 # GPIO 핀 설정
 LIGHT_SENSOR_PIN = 17
@@ -59,11 +60,28 @@ DATA_DIR = "./data"
 if not os.path.exists(DATA_DIR):
     os.makedirs(DATA_DIR)
 
-# CSV 파일 초기화
-csv_file_path = os.path.join(DATA_DIR, "sensor_data.csv")
-with open(csv_file_path, mode='w') as file:
-    writer = csv.writer(file)
-    writer.writerow(["Timestamp", "Light", "Distance", "Humidity", "Temperature"])
+# 데이터베이스 설정
+DB_HOST = 'your_host'
+DB_USER = 'your_user'
+DB_PASSWORD = 'your_password'
+DB_NAME = 'your_database'
+conn = pymysql.connect(host=DB_HOST, user=DB_USER, password=DB_PASSWORD, db=DB_NAME)
+c = conn.cursor()
+c.execute('''CREATE TABLE IF NOT EXISTS sensor_data (
+                timestamp VARCHAR(255),
+                light FLOAT,
+                distance FLOAT,
+                humidity FLOAT,
+                temperature FLOAT,
+                latitude FLOAT,
+                longitude FLOAT,
+                speed FLOAT,
+                altitude FLOAT
+            )''')
+conn.commit()
+
+# 데이터 동기화 버퍼
+data_buffer = {}
 
 def read_light_sensor():
     return mcp.read_adc(0)
@@ -95,7 +113,15 @@ def on_connect(client, userdata, flags, rc):
     print("Connected with result code " + str(rc))
 
 def on_message(client, userdata, msg):
-    print(msg.topic + " " + str(msg.payload))
+    data = json.loads(msg.payload)
+    timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+    data_buffer[timestamp] = {
+        "latitude": data.get('latitude'),
+        "longitude": data.get('longitude'),
+        "speed": data.get('speed'),
+        "altitude": data.get('altitude')
+    }
+    sync_data()
 
 # MQTT 클라이언트 설정
 client = mqtt.Client()
@@ -109,9 +135,21 @@ GPIO.add_event_detect(BUTTON_PIN, GPIO.FALLING, callback=on_button_press, bounce
 
 def save_sensor_data(light, distance, humidity, temperature):
     timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
-    with open(csv_file_path, mode='a') as file:
-        writer = csv.writer(file)
-        writer.writerow([timestamp, light, distance, humidity, temperature])
+    data_buffer[timestamp] = {
+        "light": light,
+        "distance": distance,
+        "humidity": humidity,
+        "temperature": temperature
+    }
+    sync_data()
+
+def sync_data():
+    for timestamp, data in list(data_buffer.items()):
+        if "latitude" in data and "longitude" in data and "speed" in data and "altitude" in data:
+            c.execute("INSERT INTO sensor_data (timestamp, light, distance, humidity, temperature, latitude, longitude, speed, altitude) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                      (timestamp, data["light"], data["distance"], data["humidity"], data["temperature"], data["latitude"], data["longitude"], data["speed"], data["altitude"]))
+            conn.commit()
+            del data_buffer[timestamp]
 
 try:
     camera_start_time = time.time()
@@ -172,3 +210,4 @@ try:
 except KeyboardInterrupt:
     print("Program terminated")
     GPIO.cleanup()
+    conn.close()

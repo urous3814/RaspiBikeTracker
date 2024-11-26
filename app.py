@@ -4,14 +4,39 @@ import os
 import paho.mqtt.client as mqtt
 import time
 import json
+import pymysql
 
 app = Flask(__name__)
 
 DATA_DIR = "./data"
-CSV_FILE_PATH = os.path.join(DATA_DIR, "combined_data.csv")
+# CSV 파일 초기화 제거
+# CSV_FILE_PATH = os.path.join(DATA_DIR, "combined_data.csv")
+
+# 데이터베이스 설정
+DB_HOST = 'your_host'
+DB_USER = 'your_user'
+DB_PASSWORD = 'your_password'
+DB_NAME = 'your_database'
+conn = pymysql.connect(host=DB_HOST, user=DB_USER, password=DB_PASSWORD, db=DB_NAME)
+c = conn.cursor()
+c.execute('''CREATE TABLE IF NOT EXISTS combined_data (
+                timestamp VARCHAR(255),
+                light FLOAT,
+                distance FLOAT,
+                humidity FLOAT,
+                temperature FLOAT,
+                latitude FLOAT,
+                longitude FLOAT,
+                speed FLOAT,
+                altitude FLOAT
+            )''')
+conn.commit()
+
+# 데이터 동기화 버퍼
+data_buffer = {}
 
 # MQTT 설정
-MQTT_BROKER = "mqtt.example.com"
+MQTT_BROKER = "127.0.0.1"
 MQTT_PORT = 1883
 MQTT_TOPIC = "bike/tracker"
 MQTT_PHONE_TOPIC = "phone/tracker"
@@ -24,44 +49,56 @@ def on_connect(client, userdata, flags, rc):
     print("Connected with result code " + str(rc))
     client.subscribe(MQTT_SENSOR_TOPIC)
 
+def sync_data():
+    for timestamp, data in list(data_buffer.items()):
+        if "light" in data and "distance" in data and "humidity" in data and "temperature" in data:
+            c.execute("INSERT INTO combined_data (timestamp, light, distance, humidity, temperature, latitude, longitude, speed, altitude) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                      (timestamp, data["light"], data["distance"], data["humidity"], data["temperature"], data["latitude"], data["longitude"], data["speed"], data["altitude"]))
+            conn.commit()
+            del data_buffer[timestamp]
+
 def on_message(client, userdata, msg):
     data = json.loads(msg.payload)
-    latitude = data.get('latitude')
-    longitude = data.get('longitude')
-    speed = data.get('speed')
-    altitude = data.get('altitude')
-    light = data.get('light', 0)
-    distance = data.get('distance', 0)
-    humidity = data.get('humidity', 0)
-    temperature = data.get('temperature', 0)
-    save_combined_data(light, distance, humidity, temperature, latitude, longitude, speed, altitude)
+    timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+    data_buffer[timestamp] = {
+        "latitude": data.get('latitude'),
+        "longitude": data.get('longitude'),
+        "speed": data.get('speed'),
+        "altitude": data.get('altitude')
+    }
+    sync_data()
 
 client.on_connect = on_connect
 client.on_message = on_message
 client.connect(MQTT_BROKER, MQTT_PORT, 60)
 client.loop_start()
 
-# CSV 파일 초기화
-if not os.path.exists(DATA_DIR):
-    os.makedirs(DATA_DIR)
+# CSV 파일 초기화 제거
+# if not os.path.exists(DATA_DIR):
+#     os.makedirs(DATA_DIR)
 
-with open(CSV_FILE_PATH, mode='w') as file:
-    writer = csv.writer(file)
-    writer.writerow(["Timestamp", "Light", "Distance", "Humidity", "Temperature", "Latitude", "Longitude", "Speed", "Altitude"])
+# with open(CSV_FILE_PATH, mode='w') as file:
+#     writer = csv.writer(file)
+#     writer.writerow(["Timestamp", "Light", "Distance", "Humidity", "Temperature", "Latitude", "Longitude", "Speed", "Altitude"])
 
 def read_sensor_data():
-    data = []
-    with open(CSV_FILE_PATH, mode='r') as file:
-        reader = csv.DictReader(file)
-        for row in reader:
-            data.append(row)
+    c.execute("SELECT * FROM combined_data")
+    data = c.fetchall()
     return data
 
 def save_combined_data(light, distance, humidity, temperature, latitude, longitude, speed, altitude):
     timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
-    with open(CSV_FILE_PATH, mode='a') as file):
-        writer = csv.writer(file)
-        writer.writerow([timestamp, light, distance, humidity, temperature, latitude, longitude, speed, altitude])
+    data_buffer[timestamp] = {
+        "light": light,
+        "distance": distance,
+        "humidity": humidity,
+        "temperature": temperature,
+        "latitude": latitude,
+        "longitude": longitude,
+        "speed": speed,
+        "altitude": altitude
+    }
+    sync_data()
 
 @app.route('/')
 def index():
@@ -110,18 +147,17 @@ def stop():
 @app.route('/phone_data', methods=['POST'])
 def phone_data():
     data = request.json
-    latitude = data.get('latitude')
-    longitude = data.get('longitude')
-    speed = data.get('speed')
-    altitude = data.get('altitude')
-    # 라즈베리파이에서 수집된 센서 데이터와 합쳐서 저장
-    light = data.get('light', 0)
-    distance = data.get('distance', 0)
-    humidity = data.get('humidity', 0)
-    temperature = data.get('temperature', 0)
-    save_combined_data(light, distance, humidity, temperature, latitude, longitude, speed, altitude)
+    timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+    data_buffer[timestamp] = {
+        "latitude": data.get('latitude'),
+        "longitude": data.get('longitude'),
+        "speed": data.get('speed'),
+        "altitude": data.get('altitude')
+    }
+    sync_data()
     client.publish(MQTT_PHONE_TOPIC, str(data))
     return "Data received"
 
 if __name__ == '__main__':
     app.run(debug=True)
+    conn.close()
