@@ -13,11 +13,11 @@ DATA_DIR = "./data"
 # CSV_FILE_PATH = os.path.join(DATA_DIR, "combined_data.csv")
 
 # 데이터베이스 설정
-DB_HOST = 'your_host'
-DB_USER = 'your_user'
+DB_HOST = 'localhost'
+DB_USER = 'pi'
 DB_PASSWORD = 'your_password'
 DB_NAME = 'your_database'
-conn = pymysql.connect(host=DB_HOST, user=DB_USER, password=DB_PASSWORD, db=DB_NAME)
+conn = pymysql.connect(host='localhost', user='pi', password='pi', db='TrackData')
 c = conn.cursor()
 c.execute('''CREATE TABLE IF NOT EXISTS combined_data (
                 timestamp VARCHAR(255),
@@ -49,9 +49,19 @@ def on_connect(client, userdata, flags, rc):
     print("Connected with result code " + str(rc))
     client.subscribe(MQTT_SENSOR_TOPIC)
 
+def find_closest_timestamp(target_timestamp):
+    closest_timestamp = None
+    min_diff = float('inf')
+    for ts in data_buffer.keys():
+        diff = abs(time.mktime(time.strptime(ts, "%Y-%m-%d %H:%M:%S")) - time.mktime(time.strptime(target_timestamp, "%Y-%m-%d %H:%M:%S")))
+        if diff < min_diff:
+            min_diff = diff
+            closest_timestamp = ts
+    return closest_timestamp
+
 def sync_data():
     for timestamp, data in list(data_buffer.items()):
-        if "light" in data and "distance" in data and "humidity" in data and "temperature" in data:
+        if all(key in data for key in ["light", "distance", "humidity", "temperature", "latitude", "longitude", "speed", "altitude"]):
             c.execute("INSERT INTO combined_data (timestamp, light, distance, humidity, temperature, latitude, longitude, speed, altitude) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
                       (timestamp, data["light"], data["distance"], data["humidity"], data["temperature"], data["latitude"], data["longitude"], data["speed"], data["altitude"]))
             conn.commit()
@@ -60,12 +70,21 @@ def sync_data():
 def on_message(client, userdata, msg):
     data = json.loads(msg.payload)
     timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
-    data_buffer[timestamp] = {
-        "latitude": data.get('latitude'),
-        "longitude": data.get('longitude'),
-        "speed": data.get('speed'),
-        "altitude": data.get('altitude')
-    }
+    closest_timestamp = find_closest_timestamp(timestamp)
+    if closest_timestamp:
+        data_buffer[closest_timestamp].update({
+            "latitude": data.get('latitude'),
+            "longitude": data.get('longitude'),
+            "speed": data.get('speed'),
+            "altitude": data.get('altitude')
+        })
+    else:
+        data_buffer[timestamp] = {
+            "latitude": data.get('latitude'),
+            "longitude": data.get('longitude'),
+            "speed": data.get('speed'),
+            "altitude": data.get('altitude')
+        }
     sync_data()
 
 client.on_connect = on_connect

@@ -20,6 +20,30 @@
             attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
         }).addTo(map);
 
+        var route = [];
+        var polyline = L.polyline(route, {color: 'blue'}).addTo(map);
+
+        function getColor(speed) {
+            return speed > 20 ? 'red' :
+                   speed > 10 ? 'orange' :
+                   'green';
+        }
+
+        function updateRoute(latitude, longitude, speed) {
+            route.push([latitude, longitude]);
+            polyline.setLatLngs(route);
+            polyline.setStyle({color: getColor(speed)});
+            localStorage.setItem('route', JSON.stringify(route));
+        }
+
+        function loadRoute() {
+            var storedRoute = JSON.parse(localStorage.getItem('route'));
+            if (storedRoute) {
+                route = storedRoute;
+                polyline.setLatLngs(route);
+            }
+        }
+
         fetch('/data')
             .then(response => response.json())
             .then(data => {
@@ -33,8 +57,11 @@
                         <b>Temperature:</b> ${record.Temperature}<br>
                         <img src="/image/${record.Timestamp}" alt="Image" width="200">
                     `);
+                    updateRoute(record.latitude, record.longitude, record.speed);
                 });
             });
+
+        loadRoute();
     </script>
 </body>
 </html>

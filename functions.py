@@ -32,15 +32,3 @@ def calculate_rain_probability(temperature, humidity):
     model = LinearRegression().fit(X, y)
     rain_probability = model.predict(np.array([[temperature, humidity]]))
     return rain_probability[0]
-
-def additional_analysis(data):
-    """
-    추가적인 데이터 분석 기능을 구현합니다.
-    """
-    # 예시: 평균 속도 계산
-    speeds = [record['speed'] for record in data if 'speed' in record]
-    if speeds:
-        average_speed = sum(speeds) / len(speeds)
-    else:
-        average_speed = 0
-    return average_speed

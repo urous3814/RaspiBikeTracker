@@ -29,7 +29,9 @@
     <button id="startButton">운동 기록 시작</button>
     <button id="stopButton">운동 기록 정지</button>
     <script>
-        let map, marker, speedChart;
+        let map, marker, speedChart, route = [];
+        let recording = false; // 기록 상태 변수 추가
+
         function initMap() {
             map = new google.maps.Map(document.getElementById('map'), {
                 center: {lat: -34.397, lng: 150.644},
@@ -78,6 +80,12 @@
             speedChart.update();
         }
 
+        function getColor(speed) {
+            return speed > 20 ? 'red' :
+                   speed > 10 ? 'orange' :
+                   'green';
+        }
+
         function updateMap(latitude, longitude, speed, altitude) {
             const position = {lat: latitude, lng: longitude};
             map.setCenter(position);
@@ -86,6 +94,18 @@
             document.getElementById('speedData').innerText = `속도 정보: 속도: ${speed}`;
             document.getElementById('altitudeData').innerText = `고도 정보: 고도: ${altitude}`;
             updateSpeedChart(speed);
+
+            route.push({lat: latitude, lng: longitude, speed: speed});
+            localStorage.setItem('route', JSON.stringify(route));
+
+            const path = new google.maps.Polyline({
+                path: route.map(r => ({lat: r.lat, lng: r.lng})),
+                geodesic: true,
+                strokeColor: getColor(speed),
+                strokeOpacity: 1.0,
+                strokeWeight: 2
+            });
+            path.setMap(map);
         }
 
         const client = new Paho.MQTT.Client("mqtt.example.com", Number(8080), "clientId");
@@ -97,7 +117,17 @@
 
         client.onMessageArrived = function(message) {
             const data = JSON.parse(message.payloadString);
-            updateMap(data.latitude, data.longitude, data.speed, data.altitude);
+            if (message.destinationName === "bike/tracker") {
+                if (data === "start") {
+                    recording = true;
+                    document.getElementById('startButton').innerText = "운동 기록 정지";
+                } else if (data === "stop") {
+                    recording = false;
+                    document.getElementById('startButton').innerText = "운동 기록 시작";
+                }
+            } else {
+                updateMap(data.latitude, data.longitude, data.speed, data.altitude);
+            }
         };
 
         client.connect({onSuccess: onConnect});
@@ -107,30 +137,38 @@
             client.subscribe("phone/tracker");
         }
 
-        document.getElementById('startButton').addEventListener('click', function() {
-            const message = new Paho.MQTT.Message("start");
-            message.destinationName = "bike/tracker";
-            client.send(message);
-        });
+        function toggleRecording() {
+            if (recording) {
+                const message = new Paho.MQTT.Message("stop");
+                message.destinationName = "bike/tracker";
+                client.send(message);
+                recording = false; // 기록 중지
+                document.getElementById('startButton').innerText = "운동 기록 시작";
+            } else {
+                const message = new Paho.MQTT.Message("start");
+                message.destinationName = "bike/tracker";
+                client.send(message);
+                recording = true; // 기록 시작
+                document.getElementById('startButton').innerText = "운동 기록 정지";
+            }
+        }
 
-        document.getElementById('stopButton').addEventListener('click', function() {
-            const message = new Paho.MQTT.Message("stop");
-            message.destinationName = "bike/tracker";
-            client.send(message);
-        });
+        document.getElementById('startButton').addEventListener('click', toggleRecording);
 
         if (navigator.geolocation) {
             navigator.geolocation.watchPosition(function(position) {
-                const data = {
-                    latitude: position.coords.latitude,
-                    longitude: position.coords.longitude,
-                    speed: position.coords.speed,
-                    altitude: position.coords.altitude
-                };
-                const message = new Paho.MQTT.Message(JSON.stringify(data));
-                message.destinationName = "phone/tracker";
-                client.send(message);
-                updateMap(data.latitude, data.longitude, data.speed, data.altitude);
+                if (recording) { // 기록 중일 때만 데이터 전송
+                    const data = {
+                        latitude: position.coords.latitude,
+                        longitude: position.coords.longitude,
+                        speed: position.coords.speed,
+                        altitude: position.coords.altitude
+                    };
+                    const message = new Paho.MQTT.Message(JSON.stringify(data));
+                    message.destinationName = "phone/tracker";
+                    client.send(message);
+                    updateMap(data.latitude, data.longitude, data.speed, data.altitude);
+                }
             });
         } else {
             alert("Geolocation is not supported by this browser.");
